@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create the saved_pages folder for mounting
-RUN mkdir -p /app/saved_pages
+RUN mkdir -p /app/saved_pages /app/data
 
 # Run the server
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
