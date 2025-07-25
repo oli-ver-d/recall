@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+sqlite-utils
+requests
+beautifulsoup4  # for extracting page text and title
