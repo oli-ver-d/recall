@@ -73,21 +73,18 @@ def search_text(
     db: Session = Depends(get_db)
 ):
     """
-    Search for sites by text content using ripgrep-like fuzzy matching.
-    All search terms must be present in the content (AND logic).
+    Search for sites by exact phrase matching in text content.
+    Searches for the complete query string as a phrase.
     """
-    search_terms = q.strip().split()
+    search_phrase = q.strip()
     
-    if not search_terms:
+    if not search_phrase:
         return []
     
-    # Build query with case-insensitive LIKE for each term
-    query = db.query(database.SiteData)
-    
-    for term in search_terms:
-        query = query.filter(
-            func.lower(database.SiteData.content).like(f"%{term.lower()}%")
-        )
+    # Search for the exact phrase (case-insensitive)
+    query = db.query(database.SiteData).filter(
+        func.lower(database.SiteData.content).like(f"%{search_phrase.lower()}%")
+    )
     
     # Order by creation date (newest first) and limit results
     results = query.order_by(database.SiteData.created_at.desc()).limit(limit).all()

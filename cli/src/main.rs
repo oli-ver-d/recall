@@ -1,27 +1,55 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use colored::*;
 use reqwest;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tokio;
 
 #[derive(Parser)]
-#[command(name = "recall-search")]
+#[command(name = "recall")]
 #[command(version = "0.1.0")]
 #[command(author = "Your Name")]
-#[command(about = "Search through saved web pages with ripgrep-style output")]
+#[command(about = "Archive and search web pages")]
 struct Args {
-    /// Search query string
-    query: String,
-
-    /// Maximum number of results to return
-    #[arg(short = 'l', long = "limit", default_value = "5")]
-    limit: u32,
-
     /// Server URL
     #[arg(short = 's', long = "server", default_value = "http://localhost:8000")]
     server: String,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Search through saved web pages
+    Search {
+        /// Search query string
+        query: String,
+        /// Maximum number of results to return
+        #[arg(short = 'l', long = "limit", default_value = "5")]
+        limit: u32,
+    },
+    /// Save a URL to the archive
+    Save {
+        /// URL to save
+        url: String,
+        /// Tags to add to the saved page
+        #[arg(short = 't', long = "tags")]
+        tags: Vec<String>,
+    },
+}
+
+#[derive(Serialize)]
+struct SaveRequest {
+    url: String,
+    tags: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct SaveResponse {
+    status: String,
+    id: i32,
 }
 
 #[derive(Deserialize)]
@@ -39,13 +67,25 @@ struct SearchResult {
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    // Make request to the API
+    match args.command {
+        Commands::Search { query, limit } => {
+            search_pages(&args.server, &query, limit).await?;
+        }
+        Commands::Save { url, tags } => {
+            save_page(&args.server, &url, tags).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn search_pages(server: &str, query: &str, limit: u32) -> Result<(), Box<dyn Error>> {
     let client = reqwest::Client::new();
     let url = format!(
         "{}/search_text?q={}&limit={}",
-        args.server,
-        urlencoding::encode(&args.query),
-        args.limit
+        server,
+        urlencoding::encode(query),
+        limit
     );
 
     let response = client.get(&url).send().await?;
@@ -61,80 +101,92 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let results: Vec<SearchResult> = response.json().await?;
 
     if results.is_empty() {
-        println!("No results found for query: {}", args.query.yellow());
+        println!("No results found for query: {}", query.yellow());
         return Ok(());
     }
 
     // Display results in ripgrep style
     for result in results {
-        display_result(&result, &args)?;
+        display_result(&result, query, server)?;
         println!(); // Empty line between results
     }
 
     Ok(())
 }
 
-fn display_result(result: &SearchResult, args: &Args) -> Result<(), Box<dyn Error>> {
-    // Parse the datetime
-    let created_at =
-        chrono::NaiveDateTime::parse_from_str(&result.created_at, "%Y-%m-%dT%H:%M:%S%.f")
-            .map_err(|e| format!("Failed to parse date '{}': {}", result.created_at, e))?;
+async fn save_page(server: &str, url: &str, tags: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let client = reqwest::Client::new();
+    let save_url = format!("{}/save/", server);
 
-    // Display header with title and timestamp
-    println!(
-        "{} {} {} {}",
-        result.title.bright_blue().bold(),
-        "•".dimmed(),
-        created_at.format("%Y-%m-%d %H:%M:%S").to_string().dimmed(),
-        format!("{}/page/{}", args.server, result.id).bright_purple()
-    );
+    let request = SaveRequest {
+        url: url.to_string(),
+        tags,
+    };
 
-    // Find and display context for each search term
-    let search_terms: Vec<&str> = args.query.split_whitespace().collect();
-    let content_lower = result.content.to_lowercase();
-
-    // Find all positions where search terms appear
-    let mut positions = Vec::new();
-    for term in &search_terms {
-        let term_lower = term.to_lowercase();
-        let mut start = 0;
-        while let Some(pos) = content_lower[start..].find(&term_lower) {
-            positions.push(start + pos);
-            start += pos + 1;
-        }
+    println!("Saving URL: {}", url.bright_blue());
+    if !request.tags.is_empty() {
+        println!("Tags: {}", request.tags.join(", ").dimmed());
     }
 
-    // Sort positions and remove duplicates
-    positions.sort();
-    positions.dedup();
+    let response = client.post(&save_url).json(&request).send().await?;
 
-    // Group nearby positions to avoid overlapping contexts
-    let grouped_positions = group_nearby_positions(positions, 100); // Group if within 100 chars
-
-    for &pos in &grouped_positions {
-        display_context(&result.content, pos, &search_terms, 10);
+    if response.status().is_success() {
+        let save_response: SaveResponse = response.json().await?;
+        println!(
+            "{} Saved successfully with ID: {}",
+            "✓".green().bold(),
+            save_response.id.to_string().bright_green()
+        );
+    } else {
+        let error_text = response.text().await?;
+        eprintln!("{} Failed to save URL: {}", "✗".red().bold(), error_text);
     }
 
     Ok(())
 }
 
-fn group_nearby_positions(positions: Vec<usize>, threshold: usize) -> Vec<usize> {
-    if positions.is_empty() {
-        return positions;
+fn display_result(result: &SearchResult, query: &str, server: &str) -> Result<(), Box<dyn Error>> {
+    // Parse the datetime - handle FastAPI ISO format
+    let created_at =
+        chrono::NaiveDateTime::parse_from_str(&result.created_at, "%Y-%m-%dT%H:%M:%S%.f")
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(&result.created_at, "%Y-%m-%d %H:%M:%S%.f")
+            })
+            .map_err(|e| format!("Failed to parse date '{}': {}", result.created_at, e))?;
+
+    // Display header with title and timestamp
+    println!(
+        "{} {} {} {} {}",
+        result.title.bright_blue().bold(),
+        "•",
+        format!("{}/page/{}", server, result.id)
+            .bright_purple()
+            .bold(),
+        "•",
+        created_at.format("%Y-%m-%d %H:%M:%S").to_string().dimmed(),
+    );
+
+    // Find and display context for the exact phrase
+    let content_lower = result.content.to_lowercase();
+    let query_lower = query.to_lowercase();
+
+    // Find all positions where the exact phrase appears
+    let mut positions = Vec::new();
+    let mut start = 0;
+    while let Some(pos) = content_lower[start..].find(&query_lower) {
+        positions.push(start + pos);
+        start += pos + 1;
     }
 
-    let mut grouped = vec![positions[0]];
-
-    for &pos in positions.iter().skip(1) {
-        if pos - grouped.last().unwrap() > threshold {
-            grouped.push(pos);
-        }
+    // Display context for the first 5 matches only
+    for &pos in positions.iter().take(5) {
+        display_context(&result.content, pos, query, 10);
     }
 
-    grouped
+    Ok(())
 }
 
-fn display_context(content: &str, match_pos: usize, search_terms: &[&str], context_words: usize) {
+fn display_context(content: &str, match_pos: usize, query: &str, context_words: usize) {
     let words: Vec<&str> = content.split_whitespace().collect();
 
     // Find the word index containing the match position
@@ -154,32 +206,29 @@ fn display_context(content: &str, match_pos: usize, search_terms: &[&str], conte
     let start_idx = word_index.saturating_sub(context_words);
     let end_idx = std::cmp::min(words.len(), word_index + context_words + 1);
 
-    // Build context string with highlighting
-    let mut context_parts = Vec::new();
+    // Build context string with highlighting for the exact phrase
+    let context_text = words[start_idx..end_idx].join(" ");
+    let query_lower = query.to_lowercase();
+    let context_lower = context_text.to_lowercase();
 
-    for (i, word) in words[start_idx..end_idx].iter().enumerate() {
-        let actual_index = start_idx + i;
-        let mut highlighted = false;
-
-        // Check if this word matches any search term
-        for term in search_terms {
-            if word.to_lowercase().contains(&term.to_lowercase()) {
-                context_parts.push(word.red().bold().to_string());
-                highlighted = true;
-                break;
-            }
-        }
-
-        if !highlighted {
-            context_parts.push(word.to_string());
-        }
-    }
-
-    let context = context_parts.join(" ");
+    // Find and highlight the exact phrase in the context
+    let highlighted_context = if let Some(phrase_pos) = context_lower.find(&query_lower) {
+        let before = &context_text[..phrase_pos];
+        let matched = &context_text[phrase_pos..phrase_pos + query.len()];
+        let after = &context_text[phrase_pos + query.len()..];
+        format!("{}{}{}", before, matched.red().bold(), after)
+    } else {
+        context_text
+    };
 
     // Add ellipsis if we're not at the beginning/end
     let prefix = if start_idx > 0 { "..." } else { "" };
     let suffix = if end_idx < words.len() { "..." } else { "" };
 
-    println!("  {}{}{}", prefix.dimmed(), context, suffix.dimmed());
+    println!(
+        "  {}{}{}",
+        prefix.dimmed(),
+        highlighted_context,
+        suffix.dimmed()
+    );
 }
