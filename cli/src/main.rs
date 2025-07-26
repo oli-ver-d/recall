@@ -1,4 +1,3 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::{Parser, Subcommand};
 use colored::*;
 use reqwest;
@@ -9,11 +8,16 @@ use tokio;
 #[derive(Parser)]
 #[command(name = "recall")]
 #[command(version = "0.1.0")]
-#[command(author = "Your Name")]
+#[command(author = "Oliver Dennis")]
 #[command(about = "Archive and search web pages")]
 struct Args {
     /// Server URL
-    #[arg(short = 's', long = "server", default_value = "http://localhost:8000")]
+    #[arg(
+        short = 's',
+        long = "server",
+        default_value = "http://localhost:8000",
+        env = "RECALL_SERVER"
+    )]
     server: String,
 
     #[command(subcommand)]
