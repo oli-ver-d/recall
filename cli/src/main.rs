@@ -33,6 +33,9 @@ enum Commands {
         /// Maximum number of results to return
         #[arg(short = 'l', long = "limit", default_value = "5")]
         limit: u32,
+        /// Tags to filter the search by
+        #[arg(short = 't', long = "tags")]
+        tags: Vec<String>,
     },
     /// Save a URL to the archive
     Save {
@@ -72,8 +75,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     match args.command {
-        Commands::Search { query, limit } => {
-            search_pages(&args.server, &query, limit).await?;
+        Commands::Search { query, limit, tags } => {
+            search_pages(&args.server, &query, limit, &tags).await?;
         }
         Commands::Save { url, tags } => {
             save_page(&args.server, &url, tags).await?;
@@ -83,14 +86,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn search_pages(server: &str, query: &str, limit: u32) -> Result<(), Box<dyn Error>> {
+async fn search_pages(
+    server: &str,
+    query: &str,
+    limit: u32,
+    tags: &Vec<String>,
+) -> Result<(), Box<dyn Error>> {
     let client = reqwest::Client::new();
-    let url = format!(
+    let mut url = format!(
         "{}/search_text?q={}&limit={}",
         server,
         urlencoding::encode(query),
         limit
     );
+
+    for tag in tags {
+        url.push_str(&format!("&tags={}", urlencoding::encode(tag)));
+    }
 
     let response = client.get(&url).send().await?;
 
@@ -105,7 +117,16 @@ async fn search_pages(server: &str, query: &str, limit: u32) -> Result<(), Box<d
     let results: Vec<SearchResult> = response.json().await?;
 
     if results.is_empty() {
-        println!("No results found for query: {}", query.yellow());
+        let tag_info = if tags.is_empty() {
+            String::new()
+        } else {
+            format!(" with tags [{}]", tags.join(", "))
+        };
+        println!(
+            "No results found for query: {}{}",
+            query.yellow(),
+            tag_info.dimmed()
+        );
         return Ok(());
     }
 
@@ -160,14 +181,17 @@ fn display_result(result: &SearchResult, query: &str, server: &str) -> Result<()
 
     // Display header with title and timestamp
     println!(
-        "{} {} {} {} {}",
+        "{}",
+        created_at.format("%Y-%m-%d %H:%M:%S").to_string().dimmed()
+    );
+    println!("{}", result.url.bright_green().bold());
+    println!(
+        "{} {} {}",
         result.title.bright_blue().bold(),
         "•",
         format!("{}/page/{}", server, result.id)
             .bright_purple()
             .bold(),
-        "•",
-        created_at.format("%Y-%m-%d %H:%M:%S").to_string().dimmed(),
     );
 
     // Find and display context for the exact phrase

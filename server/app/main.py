@@ -70,11 +70,13 @@ def get_saved_page(
 def search_text(
     q: str = Query(..., description="Search query"),
     limit: int = Query(5, ge=1, le=100, description="Number of results to return"),
+    tags: Optional[List[str]] = Query(None, description="Filter by tags (comma-separated)"),
     db: Session = Depends(get_db)
 ):
     """
     Search for sites by exact phrase matching in text content.
     Searches for the complete query string as a phrase.
+    Optionally filter by tags.
     """
     search_phrase = q.strip()
     
@@ -86,6 +88,13 @@ def search_text(
         func.lower(database.SiteData.content).like(f"%{search_phrase.lower()}%")
     )
     
+    # Filter by tags when provided
+    if tags:
+        for tag in tags:
+            query = query.filter(
+                func.lower(database.SiteData.tags).like(f"%{tag.lower()}%")
+            )
+
     # Order by creation date (newest first) and limit results
     results = query.order_by(database.SiteData.created_at.desc()).limit(limit).all()
     
