@@ -2,6 +2,7 @@ import subprocess
 from pathlib import Path
 from bs4 import BeautifulSoup
 import requests
+import re
 import tempfile
 
 def save_with_monolith(url: str, output_dir: str = "/app/saved_pages") -> str:
@@ -15,4 +16,8 @@ def extract_text_and_title(url: str) -> tuple[str, str]:
     soup = BeautifulSoup(r.text, "html.parser")
     title = soup.title.string.strip() if soup.title else "No title"
     text = soup.get_text()
+    text = normalise_text(text)
     return title, text
+
+def normalise_text(text: str) -> str:
+    return re.sub("\s{2,}", " ", text)
