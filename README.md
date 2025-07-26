@@ -66,6 +66,45 @@ recall search "example"
 
 ### CLI Commands
 
+```bash
+Archive and search web pages
+
+Usage: cli [OPTIONS] <COMMAND>
+
+Commands:
+  search  Search through saved web pages
+  save    Save a URL to the archive
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -s, --server <SERVER>  Server URL [env: RECALL_SERVER=] [default: http://localhost:8000]
+  -h, --help             Print help
+  -V, --version          Print version
+
+Search through saved web pages
+
+Usage: cli search [OPTIONS] <QUERY>
+
+Arguments:
+  <QUERY>  Search query string
+
+Options:
+  -l, --limit <LIMIT>  Maximum number of results to return [default: 5]
+  -t, --tags <TAGS>    Tags to filter the search by
+  -h, --help           Print help
+
+Save a URL to the archive
+
+Usage: cli save [OPTIONS] <URL>
+
+Arguments:
+  <URL>  URL to save
+
+Options:
+  -t, --tags <TAGS>  Tags to add to the saved page
+  -h, --help         Print help
+```
+
 #### Save a Web Page
 ```bash
 # Basic save
