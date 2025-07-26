@@ -69,7 +69,7 @@ recall search "example"
 ```bash
 Archive and search web pages
 
-Usage: cli [OPTIONS] <COMMAND>
+Usage: recall [OPTIONS] <COMMAND>
 
 Commands:
   search  Search through saved web pages
@@ -83,7 +83,7 @@ Options:
 
 Search through saved web pages
 
-Usage: cli search [OPTIONS] <QUERY>
+Usage: recall search [OPTIONS] <QUERY>
 
 Arguments:
   <QUERY>  Search query string
@@ -95,7 +95,7 @@ Options:
 
 Save a URL to the archive
 
-Usage: cli save [OPTIONS] <URL>
+Usage: recall save [OPTIONS] <URL>
 
 Arguments:
   <URL>  URL to save
