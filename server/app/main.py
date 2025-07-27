@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Path, Depends, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -10,6 +11,18 @@ from . import database, monolith_handler
 
 app = FastAPI()
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "*",  # For development
+        # "chrome-extension://your-extension-id-here",  # For production
+        # "moz-extension://your-extension-id-here",     # For Firefox
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 class URLRequest(BaseModel):
     url: str
@@ -96,6 +109,6 @@ def search_text(
             )
 
     # Order by creation date (newest first) and limit results
-    results = query.order_by(database.SiteData.created_at.desc()).limit(limit).all()
+    results = query.order_by(database.SiteData.created_at.asc()).limit(limit).all()
     
     return results
