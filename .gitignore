@@ -1,3 +1,5 @@
 server/saved_pages/
 server/data/
+server/.venv/
 cli/target/
+extension/*.zip

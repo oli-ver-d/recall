@@ -36,6 +36,9 @@ enum Commands {
         /// Tags to filter the search by
         #[arg(short = 't', long = "tags")]
         tags: Vec<String>,
+        /// Set to only show where the query matches a whole word
+        #[arg(short = 'w', long = "whole")]
+        whole: bool,
     },
     /// Save a URL to the archive
     Save {
@@ -44,6 +47,14 @@ enum Commands {
         /// Tags to add to the saved page
         #[arg(short = 't', long = "tags")]
         tags: Vec<String>,
+    },
+    /// Open a saved recall item in the browser
+    Open {
+        /// Id of the saved item to open
+        id: u32,
+        /// Whether to open the original url, rather than the saved version
+        #[arg(short = 'o', long = "original")]
+        original: bool,
     },
 }
 
@@ -70,16 +81,29 @@ struct SearchResult {
     created_at: String,
 }
 
+#[derive(Deserialize)]
+struct GetUrlResult {
+    url: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     match args.command {
-        Commands::Search { query, limit, tags } => {
-            search_pages(&args.server, &query, limit, &tags).await?;
+        Commands::Search {
+            query,
+            limit,
+            tags,
+            whole,
+        } => {
+            search_pages(&args.server, &query, limit, &tags, whole).await?;
         }
         Commands::Save { url, tags } => {
             save_page(&args.server, &url, tags).await?;
+        }
+        Commands::Open { id, original } => {
+            open_page(&args.server, id, original).await?;
         }
     }
 
@@ -91,13 +115,15 @@ async fn search_pages(
     query: &str,
     limit: u32,
     tags: &Vec<String>,
+    whole: bool,
 ) -> Result<(), Box<dyn Error>> {
     let client = reqwest::Client::new();
     let mut url = format!(
-        "{}/search_text?q={}&limit={}",
+        "{}/search_text?q={}&limit={}&whole_word={}",
         server,
         urlencoding::encode(query),
-        limit
+        limit,
+        whole
     );
 
     for tag in tags {
@@ -131,8 +157,8 @@ async fn search_pages(
     }
 
     // Display results in ripgrep style
-    for result in results {
-        display_result(&result, query, server)?;
+    for result in results.iter().rev() {
+        display_result(&result, query, server, whole)?;
         println!(); // Empty line between results
     }
 
@@ -170,7 +196,40 @@ async fn save_page(server: &str, url: &str, tags: Vec<String>) -> Result<(), Box
     Ok(())
 }
 
-fn display_result(result: &SearchResult, query: &str, server: &str) -> Result<(), Box<dyn Error>> {
+async fn open_page(server: &str, id: u32, original: bool) -> Result<(), Box<dyn Error>> {
+    let url = if original {
+        let client = reqwest::Client::new();
+        let get_url = format!("{}/get_url?id={}", server, id.to_string());
+
+        let response = client.get(&get_url).send().await?;
+
+        if !response.status().is_success() {
+            eprintln!(
+                "Error: API request failed with status {}",
+                response.status()
+            );
+            return Ok(());
+        }
+
+        let result: GetUrlResult = response.json().await?;
+        result.url
+    } else {
+        format!("{}/page/{}", server, id)
+    };
+    if webbrowser::open(&url).is_ok() {
+        println!("Opened browser to {}", url);
+    } else {
+        eprintln!("Failed to open browser");
+    }
+    Ok(())
+}
+
+fn display_result(
+    result: &SearchResult,
+    query: &str,
+    server: &str,
+    whole: bool,
+) -> Result<(), Box<dyn Error>> {
     // Parse the datetime - handle FastAPI ISO format
     let created_at =
         chrono::NaiveDateTime::parse_from_str(&result.created_at, "%Y-%m-%dT%H:%M:%S%.f")
@@ -184,7 +243,11 @@ fn display_result(result: &SearchResult, query: &str, server: &str) -> Result<()
         "{}",
         created_at.format("%Y-%m-%d %H:%M:%S").to_string().dimmed()
     );
-    println!("{}", result.url.bright_green().bold());
+    println!(
+        "ID: {}, {}",
+        result.id.to_string().bright_cyan(),
+        result.url.bright_green().bold()
+    );
     println!(
         "{} {} {}",
         result.title.bright_blue().bold(),
@@ -200,10 +263,20 @@ fn display_result(result: &SearchResult, query: &str, server: &str) -> Result<()
 
     // Find all positions where the exact phrase appears
     let mut positions = Vec::new();
-    let mut start = 0;
-    while let Some(pos) = content_lower[start..].find(&query_lower) {
-        positions.push(start + pos);
-        start += pos + 1;
+
+    if whole {
+        let regex_pattern = format!(r"\b{}\b", regex::escape(&query_lower));
+        if let Ok(re) = regex::Regex::new(&regex_pattern) {
+            for mat in re.find_iter(&content_lower) {
+                positions.push(mat.start());
+            }
+        }
+    } else {
+        let mut start = 0;
+        while let Some(pos) = content_lower[start..].find(&query_lower) {
+            positions.push(start + pos);
+            start += pos + 1;
+        }
     }
 
     // Display context for the first 5 matches only
