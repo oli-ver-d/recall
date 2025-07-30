@@ -9,15 +9,17 @@ pub fn display_search_results(
     server: &str,
     tags: &[String],
     whole: bool,
+    title: bool,
 ) -> Result<(), Box<dyn Error>> {
     if results.is_empty() {
         display_no_results(query, tags);
         return Ok(());
     }
 
+    // different display output for title and content searches
     // Display results in ripgrep style
     for result in results.iter().rev() {
-        display_result(result, query, server, whole)?;
+        display_result(result, query, server, whole, title)?;
         println!(); // Empty line between results
     }
 
@@ -66,6 +68,7 @@ fn display_result(
     query: &str,
     server: &str,
     whole: bool,
+    title: bool,
 ) -> Result<(), Box<dyn Error>> {
     // Parse the datetime - handle FastAPI ISO format
     let created_at = parse_datetime(&result.created_at)?;
@@ -90,7 +93,12 @@ fn display_result(
     );
 
     // Find and display context for the exact phrase
-    display_search_matches(&result.content, query, whole);
+    let highlight_content = if title {
+        &result.title
+    } else {
+        &result.content
+    };
+    display_search_matches(highlight_content, query, whole);
 
     Ok(())
 }

@@ -8,8 +8,9 @@ pub async fn handle_search(
     limit: u32,
     tags: &[String],
     whole: bool,
+    title: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let results = client.search(query, limit, tags, whole).await?;
-    display::display_search_results(&results, query, server, tags, whole)?;
+    let results = client.search(query, limit, tags, whole, title).await?;
+    display::display_search_results(&results, query, server, tags, whole, title)?;
     Ok(())
 }

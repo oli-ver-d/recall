@@ -34,6 +34,9 @@ pub enum Commands {
         /// Set to only show where the query matches a whole word
         #[arg(short = 'w', long = "whole")]
         whole: bool,
+        /// Set to search through the titles instead of text
+        #[arg(short = 'T', long = "title")]
+        title: bool,
     },
     /// Save a URL to the archive
     Save {

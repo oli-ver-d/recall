@@ -18,8 +18,9 @@ pub async fn execute(args: Args) -> Result<(), Box<dyn Error>> {
             limit,
             tags,
             whole,
+            title,
         } => {
-            search::handle_search(&client, &args.server, &query, limit, &tags, whole).await?;
+            search::handle_search(&client, &args.server, &query, limit, &tags, whole, title).await?;
         }
         Commands::Save { url, tags } => {
             save::handle_save(&client, &url, tags).await?;

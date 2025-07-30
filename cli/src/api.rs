@@ -21,10 +21,14 @@ impl ApiClient {
         limit: u32,
         tags: &[String],
         whole: bool,
+        title: bool,
     ) -> Result<Vec<SearchResult>, Box<dyn Error>> {
+        let endpoint = if title { "search_title" } else { "search_text" };
+
         let mut url = format!(
-            "{}/search_text?q={}&limit={}&whole_word={}",
+            "{}/{}?q={}&limit={}&whole_word={}",
             self.server_url,
+            endpoint,
             urlencoding::encode(query),
             limit,
             whole

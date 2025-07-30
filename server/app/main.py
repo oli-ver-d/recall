@@ -143,6 +143,70 @@ def search_text(
     return results
 
 
+@app.get("/search_title")
+def search_text(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(5, ge=1, le=100, description="Number of results to return"),
+    tags: Optional[List[str]] = Query(None, description="Filter by tags (comma-separated)"),
+    whole_word: bool = Query(False, description="Search for whole words only (not part of other words)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Search for sites by exact phrase matching in their titles.
+    Searches for the complete query string as a phrase.
+    Optionally filter by tags.
+    """
+    search_phrase = q.strip()
+    
+    if not search_phrase:
+        return []
+    
+    if whole_word:
+        # SQLite word boundary simulation using LIKE patterns
+        # Check for word boundaries before AND after the search term
+        search_lower = search_phrase.lower()
+        
+        # Define word boundary characters (non-alphanumeric)
+        boundaries = [' ', '.', ',', ';', ':', '!', '?', '\n', '\t', '(', ')', '[', ']', '{', '}', '"', "'"]
+        
+        conditions = []
+        
+        # Word at the very beginning of text (start + boundary after)
+        for boundary in boundaries:
+            conditions.append(func.lower(database.SiteData.title).like(f"{search_lower}{boundary}%"))
+        
+        # Word in the middle (boundary before + word + boundary after)
+        for bound_before in boundaries:
+            for bound_after in boundaries:
+                conditions.append(func.lower(database.SiteData.title).like(f"%{bound_before}{search_lower}{bound_after}%"))
+        
+        # Word at the very end of text (boundary before + end)
+        for boundary in boundaries:
+            conditions.append(func.lower(database.SiteData.title).like(f"%{boundary}{search_lower}"))
+        
+        # Exact match (whole title is just the word)
+        conditions.append(func.lower(database.SiteData.title) == search_lower)
+        
+        query = db.query(database.SiteData).filter(or_(*conditions))
+    else:
+        # Search for the exact phrase (case-insensitive)
+        query = db.query(database.SiteData).filter(
+            func.lower(database.SiteData.title).like(f"%{search_phrase.lower()}%")
+        )
+    
+    # Filter by tags when provided
+    if tags:
+        for tag in tags:
+            query = query.filter(
+                func.lower(database.SiteData.tags).like(f"%{tag.lower()}%")
+            )
+
+    # Order by creation date (newest first) and limit results
+    results = query.order_by(database.SiteData.created_at.desc()).limit(limit).all()
+    
+    return results
+
+
 @app.get("/get_url")
 def get_url(id: int = Query(..., description="Id of the URL to retrieve"), db: Session = Depends(get_db)):
     """
